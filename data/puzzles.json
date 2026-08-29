@@ -1,6 +1,23 @@
 {
   "puzzles": [
     {
+      "id": "004",
+      "contentVersion": "1.0.0",
+      "title": "Extra Credit #004",
+      "publishDate": "2026-08-29",
+      "difficulty": "1.8",
+      "dek": "A level 1.8 warm-up with just enough side-eye.",
+      "groups": [
+        { "level": "freshman", "category": "Classic board games", "words": ["SORRY", "CLUE", "TROUBLE", "LIFE"], "hintWord": "SORRY" },
+        { "level": "sophomore", "category": "Black-led UPN sitcoms", "words": ["MOESHA", "EVE", "THE PARKERS", "ONE ON ONE"], "hintWord": "MOESHA" },
+        { "level": "junior", "category": "___ Day", "words": ["FIELD", "GAME", "SICK", "SNOW"], "hintWord": "FIELD" },
+        { "level": "senior", "category": "Start with a silent letter", "words": ["KNIFE", "GNOME", "WRIST", "PSALM"], "hintWord": "KNIFE" }
+      ],
+      "solutionPaths": [
+        { "id": "reference" }
+      ]
+    },
+    {
       "id": "003",
       "contentVersion": "1.0.0",
       "title": "Extra Credit #003",

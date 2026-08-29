@@ -1,0 +1,28 @@
+{
+  "puzzles": [
+    {
+      "id": "003",
+      "contentVersion": "1.0.0",
+      "title": "Extra Credit #003",
+      "publishDate": "2026-09-07",
+      "difficulty": "4.0",
+      "dek": "Some cards are absolutely trying to set you up.",
+      "groups": [
+        { "level": "freshman", "category": "___ Berry", "words": ["HALLE", "CHUCK", "BLUE", "STRAW"], "hintWord": "HALLE" },
+        { "level": "sophomore", "category": "___ Rock", "words": ["CHRIS", "KID", "PUNK", "FRAGGLE"], "hintWord": "CHRIS" },
+        { "level": "junior", "category": "___ Prince", "words": ["FRESH", "PURPLE", "HALF-BLOOD", "LITTLE"], "hintWord": "FRESH" },
+        { "level": "senior", "category": "___ Bean", "words": ["BLACK", "GREEN", "STRING", "JELLY"], "hintWord": "JELLY" }
+      ],
+      "solutionPaths": [
+        { "id": "reference" },
+        {
+          "id": "black-purple-swap",
+          "overrides": {
+            "junior": ["FRESH", "BLACK", "HALF-BLOOD", "LITTLE"],
+            "senior": ["PURPLE", "GREEN", "STRING", "JELLY"]
+          }
+        }
+      ]
+    }
+  ]
+}

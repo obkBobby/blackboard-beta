@@ -190,19 +190,158 @@ function resultText(state, puzzle) {
 const allowed = new Set([
   'blackboard_page_view','extra_credit_started','submission_correct','submission_wrong',
   'one_away_triggered','note_opened','group_solved','puzzle_completed','puzzle_failed',
-  'result_copied','result_shared','archive_opened'
+  'result_copied','result_shared','archive_opened','session_summary'
 ]);
+const allowedDetailKeys = new Set(['issue','variant','level','mistakes','notes']);
+const allowedAttribution = ['tester','first','position','utm_source','utm_medium','utm_campaign','utm_content'];
 const parentChannel = 'obk:blackboard:analytics:v1';
+const collectorName = 'OBK Extra Credit Beta Analytics';
+const collectorUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSeT6aYOohLqDKbA_g9wj3XzfJS9mZMpETEm-7RBGRyx_tzQ-w/formResponse';
+const collectorField = 'entry.709548594';
+const sessionKey = 'obk:extra-credit:analytics-session:v1';
+const schemaVersion = 1;
+
+let configured = false;
+let context = {};
+let attribution = {};
+let sessionId = '';
+let sequence = 0;
+let sessionStartedAt = Date.now();
+let activeStartedAt = null;
+let activeMilliseconds = 0;
+let lastEvent = 'none';
+let summaryVersion = 0;
+const progress = { attempts:0, hints:0, groups_solved:0, outcome:'in_progress' };
+
+function safeSessionId() {
+  try {
+    const existing = sessionStorage.getItem(sessionKey);
+    if (existing && /^[a-zA-Z0-9-]{8,80}$/.test(existing)) return existing;
+    const created = crypto.randomUUID?.() || `visit-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
+    sessionStorage.setItem(sessionKey, created);
+    return created;
+  } catch {
+    return `visit-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
+  }
+}
+
+function cleanToken(value, maximum = 64) {
+  return typeof value === 'string' && /^[a-zA-Z0-9._-]+$/.test(value) ? value.slice(0, maximum) : undefined;
+}
+
+function readAttribution() {
+  const params = new URLSearchParams(location.search);
+  const values = {};
+  for (const key of allowedAttribution) {
+    const cleaned = cleanToken(params.get(key));
+    if (cleaned) values[key] = cleaned;
+  }
+  if (!/^beta0[1-4]$/.test(values.tester || '')) delete values.tester;
+  if (!['blackboard','misdirection'].includes(values.first)) delete values.first;
+  if (!['1','2'].includes(values.position)) delete values.position;
+  if (values.position) values.position = Number(values.position);
+  return values;
+}
+
+function deviceClass() {
+  if (innerWidth < 600) return 'mobile';
+  if (innerWidth < 1000) return 'tablet';
+  return 'desktop';
+}
+
+function updateActiveTime() {
+  const now = performance.now();
+  if (document.visibilityState === 'visible') {
+    if (activeStartedAt === null) activeStartedAt = now;
+  } else if (activeStartedAt !== null) {
+    activeMilliseconds += Math.max(0, now - activeStartedAt);
+    activeStartedAt = null;
+  }
+}
+
+function activeSeconds() {
+  updateActiveTime();
+  const current = activeStartedAt === null ? 0 : Math.max(0, performance.now() - activeStartedAt);
+  return Math.round((activeMilliseconds + current) / 1000);
+}
+
+function safeDetails(details) {
+  return Object.fromEntries(Object.entries(details).filter(([key, value]) =>
+    allowedDetailKeys.has(key) && ['string','number','boolean'].includes(typeof value)
+  ));
+}
+
+function updateProgress(name) {
+  if (name === 'submission_correct' || name === 'submission_wrong') progress.attempts += 1;
+  if (name === 'note_opened') progress.hints += 1;
+  if (name === 'group_solved') progress.groups_solved += 1;
+  if (name === 'puzzle_completed') progress.outcome = 'completed';
+  if (name === 'puzzle_failed') progress.outcome = 'failed';
+}
+
+function send(event, details = {}) {
+  const payload = {
+    schema: schemaVersion,
+    collector: collectorName,
+    event,
+    occurred_at: new Date().toISOString(),
+    session_id: sessionId,
+    sequence: ++sequence,
+    active_seconds: activeSeconds(),
+    elapsed_seconds: Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000)),
+    device: deviceClass(),
+    ...attribution,
+    ...context,
+    ...progress,
+    ...details
+  };
+  try {
+    const body = new URLSearchParams({
+      [collectorField]: JSON.stringify(payload),
+      fvv: '1',
+      pageHistory: '0',
+      submissionTimestamp: '-1'
+    });
+    navigator.sendBeacon(collectorUrl, body);
+  } catch {
+    // Analytics must never interrupt the game.
+  }
+  return payload;
+}
+
+function sendSummary() {
+  if (!configured || lastEvent === 'none') return;
+  summaryVersion += 1;
+  send('session_summary', { last_event:lastEvent, summary_version:summaryVersion });
+}
+
+function configureAnalytics(baseContext = {}) {
+  if (configured) return;
+  configured = true;
+  sessionId = safeSessionId();
+  attribution = readAttribution();
+  context = safeDetails(baseContext);
+  sessionStartedAt = Date.now();
+  updateActiveTime();
+  document.addEventListener('visibilitychange', () => {
+    updateActiveTime();
+    if (document.visibilityState === 'hidden') sendSummary();
+  });
+  addEventListener('pagehide', sendSummary);
+}
 
 function track(name, details = {}) {
   if (!allowed.has(name)) return;
-  const safe = Object.fromEntries(Object.entries(details).filter(([, value]) =>
-    ['string','number','boolean'].includes(typeof value)
-  ));
+  if (!configured) configureAnalytics();
+  const safe = safeDetails(details);
+  updateProgress(name);
+  const collected = send(name, safe);
+  lastEvent = name;
   const payload = { name, ...safe };
   window.dispatchEvent(new CustomEvent('blackboard:analytics', { detail: payload }));
-  if (Array.isArray(window.dataLayer)) window.dataLayer.push({ event: name, ...safe });
-  if (window.parent !== window) window.parent.postMessage({ channel: parentChannel, payload }, '*');
+  if (Array.isArray(window.dataLayer)) window.dataLayer.push({ event:name, ...safe });
+  if (window.parent !== window) window.parent.postMessage({ channel:parentChannel, payload }, '*');
+  return collected;
 }
 
 const root = document.querySelector('[data-game]');
@@ -235,7 +374,7 @@ function isPuzzle(value) {
     group.words.every(word => typeof word === 'string') && group.words.includes(group.hintWord));
 }
 
-const catalog = {"puzzles":[{"id":"003","contentVersion":"1.0.0","title":"Extra Credit #003","publishDate":"2026-09-07","difficulty":"4.0","dek":"Some cards are absolutely trying to set you up.","groups":[{"level":"freshman","category":"___ Berry","words":["HALLE","CHUCK","BLUE","STRAW"],"hintWord":"HALLE"},{"level":"sophomore","category":"___ Rock","words":["CHRIS","KID","PUNK","FRAGGLE"],"hintWord":"CHRIS"},{"level":"junior","category":"___ Prince","words":["FRESH","PURPLE","HALF-BLOOD","LITTLE"],"hintWord":"FRESH"},{"level":"senior","category":"___ Bean","words":["BLACK","GREEN","STRING","JELLY"],"hintWord":"JELLY"}],"solutionPaths":[{"id":"reference"},{"id":"black-purple-swap","overrides":{"junior":["FRESH","BLACK","HALF-BLOOD","LITTLE"],"senior":["PURPLE","GREEN","STRING","JELLY"]}}]}]};
+const catalog = {"puzzles":[{"id":"004","contentVersion":"1.0.0","title":"Extra Credit #004","publishDate":"2026-08-29","difficulty":"1.8","dek":"A level 1.8 warm-up with just enough side-eye.","groups":[{"level":"freshman","category":"Classic board games","words":["SORRY","CLUE","TROUBLE","LIFE"],"hintWord":"SORRY"},{"level":"sophomore","category":"Black-led UPN sitcoms","words":["MOESHA","EVE","THE PARKERS","ONE ON ONE"],"hintWord":"MOESHA"},{"level":"junior","category":"___ Day","words":["FIELD","GAME","SICK","SNOW"],"hintWord":"FIELD"},{"level":"senior","category":"Start with a silent letter","words":["KNIFE","GNOME","WRIST","PSALM"],"hintWord":"KNIFE"}],"solutionPaths":[{"id":"reference"}]},{"id":"003","contentVersion":"1.0.0","title":"Extra Credit #003","publishDate":"2026-09-07","difficulty":"4.0","dek":"Some cards are absolutely trying to set you up.","groups":[{"level":"freshman","category":"___ Berry","words":["HALLE","CHUCK","BLUE","STRAW"],"hintWord":"HALLE"},{"level":"sophomore","category":"___ Rock","words":["CHRIS","KID","PUNK","FRAGGLE"],"hintWord":"CHRIS"},{"level":"junior","category":"___ Prince","words":["FRESH","PURPLE","HALF-BLOOD","LITTLE"],"hintWord":"FRESH"},{"level":"senior","category":"___ Bean","words":["BLACK","GREEN","STRING","JELLY"],"hintWord":"JELLY"}],"solutionPaths":[{"id":"reference"},{"id":"black-purple-swap","overrides":{"junior":["FRESH","BLACK","HALF-BLOOD","LITTLE"],"senior":["PURPLE","GREEN","STRING","JELLY"]}}]}]};
 if (catalog) {
   const requested = new URLSearchParams(location.search).get('issue');
   const puzzle = catalog.puzzles.find(item => item.id === requested) || catalog.puzzles.at(-1);
@@ -251,7 +390,8 @@ if (catalog) {
     storageWarning = true;
   }
   let state = hydrateGame(saved, puzzle, variant) || createGame(puzzle, variant);
-  const isNew = !saved;
+  let analyticsStarted = false;
+  configureAnalytics({ issue:puzzle.id, variant });
 
   const els = {
     issue: $('[data-issue]'), date: $('[data-date]'), difficulty: $('[data-difficulty]'),
@@ -291,8 +431,13 @@ if (catalog) {
       button.setAttribute('aria-pressed', String(state.selected.includes(word)));
       button.disabled = state.status !== 'playing';
       button.addEventListener('click', () => {
+        const wasSelected = state.selected.includes(word);
         const atLimit = state.selected.length === 4 && !state.selected.includes(word);
         state = toggleCard(state, word);
+        if (!analyticsStarted && !wasSelected && state.selected.includes(word)) {
+          analyticsStarted = true;
+          track('extra_credit_started', { issue:puzzle.id, variant });
+        }
         persist();
         render();
         if (atLimit) announce('Four-card limit reached. Deselect a card before choosing another.');
@@ -440,7 +585,6 @@ if (catalog) {
     }
   });
   track('blackboard_page_view', { issue:puzzle.id, variant });
-  if (isNew) track('extra_credit_started', { issue:puzzle.id, variant });
   render();
   persist();
   storageNotice();

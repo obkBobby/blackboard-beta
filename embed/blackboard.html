@@ -35,7 +35,7 @@ html{background:#efe8dc}.shell{width:min(1120px,100%)}.brand-mark{border-radius:
 </main>
 <noscript><p class="noscript">Misdirection needs JavaScript enabled to keep score.</p></noscript><footer class="site-foot">Misdirection on BlackBoard. A weekly game from Only Black Kids.</footer></div>
 <dialog class="dialog" id="note-dialog" aria-labelledby="note-title"><div class="dialog-inner"><h2 id="note-title">Pass Me a Note</h2><p>Choose an unsolved group. Open a direction, a connection, or one tile, only as far as you want. Notes Used counts groups helped, not individual steps.</p><div class="note-choices" data-note-choices></div><div class="dialog-actions"><button class="pill" type="button" data-close-dialog>Back to the board</button></div></div></dialog>
-<dialog class="dialog" id="result-dialog" aria-labelledby="result-title"><div class="dialog-inner"><h2 id="result-title" data-result-title>Report Card</h2><p>Your report is spoiler-free and ready to share. Close this to read why each group fits.</p><textarea class="result-text" data-result-text readonly aria-label="Shareable result"></textarea><p class="share-status" data-share-status role="status" aria-live="polite"></p><div class="dialog-actions"><button class="pill primary" type="button" data-copy>Copy Result</button><button class="pill" type="button" data-share>Share</button><button class="pill" type="button" data-close-dialog>Review board</button><button class="pill" type="button" data-next-level hidden></button></div></div></dialog>
+<dialog class="dialog" id="result-dialog" aria-labelledby="result-title"><div class="dialog-inner"><h2 id="result-title" data-result-title>Report Card</h2><textarea class="result-text" data-result-text hidden readonly aria-label="Shareable result"></textarea><p class="share-status" data-share-status hidden role="status" aria-live="polite"></p><div class="dialog-actions"><button class="pill primary" type="button" data-copy>Copy</button><button class="pill" type="button" data-share>Share</button><button class="pill" type="button" data-close-dialog>Review</button><button class="pill" type="button" data-next-level hidden></button></div></div></dialog>
 <script>const LEVELS = ['freshman', 'sophomore', 'junior', 'senior'];
 const SYMBOLS = { freshman: '🟨', sophomore: '🟩', junior: '🟦', senior: '🟪' };
 
@@ -538,10 +538,6 @@ if (catalog) {
       const words = document.createElement('span');
       words.textContent = group.words.join(' · ');
       card.append(label, category, words);
-      const explanation = document.createElement('p');
-      explanation.className = 'group-explanation';
-      explanation.textContent = state.solutionPath && state.solutionPath !== 'reference' && group.alternateExplanation ? group.alternateExplanation : group.explanation || '';
-      card.append(explanation);
       return card;
     }));
     els.mistakes.replaceChildren(...Array.from({ length: 4 }, (_, index) => {
@@ -572,7 +568,8 @@ if (catalog) {
     els.resultText.value = resultText(state, puzzle);
     els.resultText.setSelectionRange(0, 0);
     els.resultText.scrollTop = 0;
-    els.share.hidden = typeof navigator.share !== 'function';
+    els.resultText.hidden = true;
+    els.shareStatus.hidden = true;
     const nextButton = $('[data-next-level]');
     const next = assignments[assignments.indexOf(puzzle) + 1];
     if (nextButton) {
@@ -581,7 +578,7 @@ if (catalog) {
       nextButton.onclick = next ? () => chooseAssignment(next.id) : null;
     }
     if (!els.resultDialog.open) {
-      els.copy.textContent = 'Copy Result';
+      els.copy.textContent = 'Copy';
       els.shareStatus.textContent = '';
       els.resultDialog.showModal();
     }
@@ -590,6 +587,8 @@ if (catalog) {
   }
 
   function manualCopyFallback() {
+    els.resultText.hidden = false;
+    els.shareStatus.hidden = false;
     els.shareStatus.textContent = 'Select the spoiler-free result above and copy manually.';
     els.resultText.focus();
     els.resultText.select();
@@ -656,7 +655,7 @@ if (catalog) {
     try { localStorage.removeItem(storageKey); } catch { storageWarning = true; }
     memorySave = null;
     state = createGame(puzzle, variant);
-    els.copy.textContent = 'Copy Result';
+    els.copy.textContent = 'Copy';
     els.shareStatus.textContent = '';
     persist(); render(); announce('Fresh board ready.');
   });
@@ -678,6 +677,10 @@ if (catalog) {
   els.share.addEventListener('click', async () => {
     els.shareStatus.textContent = '';
     try {
+      if (typeof navigator.share !== 'function') {
+        els.copy.click();
+        return;
+      }
       await navigator.share({ title:puzzle.title, text:resultText(state,puzzle) });
       track('result_shared', { issue:puzzle.id, variant });
     } catch (error) {
